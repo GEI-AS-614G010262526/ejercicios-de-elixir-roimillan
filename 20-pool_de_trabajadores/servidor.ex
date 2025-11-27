@@ -29,49 +29,48 @@ defmodule Servidor do
   
   defp init(n) do
     workers = for _ <- 1..n, do: Trabajador.start()
-    loop(workers, workers, nil, nil, %{}, 0)
+    loop(workers, nil, nil, %{}, 0)
   end
 
   #MUY SENCILLO:
-  #SI RECIBE TRABAJOS Y HAY SUFICIENTES TRABAJADORES LIBRES, ASIGNA LOS TRABAJOS
-  #SI NO HAY SUFICIENTES, RESPONDE CON ERROR
+  #SI RECIBE TRABAJOS Y EL LOTE NO ES MAS GRANDE QUE EL POOL, ASIGNA LOS TRABAJOS
+  #SI EL LOTE ES MAS GRANDE, RESPONDE CON ERROR
   #SI RECIBE RESULTADOS, LOS ALMACENA Y SI SON TODOS, RESPONDE AL CLIENTE
   #SI RECIBE STOP, PARA A TODOS LOS TRABAJADORES
   
-  defp loop(workers, free_workers, client, batch_ref, results, pending) do
+  defp loop(workers, client, batchRef, results, pending) do
     receive do
+      
       {:trabajos, from, ref, jobs} ->
         if length(jobs) > length(workers) do
           send(from, {:respuesta, ref, {:error, :lote_demasiado_grande}})
-          loop(workers, free_workers, client, batch_ref, results, pending)
+          loop(workers, client, batchRef, results, pending)
         else
-          {assigned, remaining_free} = Enum.split(free_workers, length(jobs))
-          
           Enum.with_index(jobs)
           |> Enum.each(fn {job, idx} ->
-            worker = Enum.at(assigned, idx)
+            worker = Enum.at(workers, idx)
             send(worker, {:trabajo, self(), fn -> {idx, job.()} end})
           end)
           
-          loop(workers, remaining_free, from, ref, %{}, length(jobs))
+          loop(workers, from, ref, %{}, length(jobs))
         end
 
-      {:resultado, worker, {idx, result}} ->
-        new_results = Map.put(results, idx, result)
-        new_free = [worker | free_workers]
-        new_pending = pending - 1
+      {:resultado, _worker, {idx, result}} ->
+        newResults = Map.put(results, idx, result)
+        newPending = pending - 1
         
-        if new_pending == 0 do
-          ordered_results = for i <- 0..(map_size(new_results)-1), do: new_results[i]
-          send(client, {:respuesta, batch_ref, ordered_results}) 
-          loop(workers, new_free, nil, nil, %{}, 0)
+        if newPending == 0 do
+          orderedResults = for i <- 0..(map_size(newResults)-1), do: newResults[i]
+          send(client, {:respuesta, batchRef, orderedResults}) 
+          loop(workers, nil, nil, %{}, 0)
         else
-          loop(workers, new_free, client, batch_ref, new_results, new_pending)
+          loop(workers, client, batchRef, newResults, newPending)
         end
 
       {:stop, from} ->
         Enum.each(workers, fn worker -> send(worker, :stop) end)
         send(from, {:ok, self()})
+        
     end
   end
 end

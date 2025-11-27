@@ -1,5 +1,4 @@
 defmodule Trabajador do
-  
   def start() do
     spawn(fn -> loop() end)
   end
@@ -7,8 +6,9 @@ defmodule Trabajador do
   defp loop() do
     receive do
       {:trabajo, from, func} ->
-        result = safe_execute(func)
-        send(from, {:resultado, self(), result})
+        # func es: fn -> {idx, job.()} end
+        {idx, result} = safe_execute(func)  # ← EXTRAEMOS índice y resultado
+        send(from, {:resultado, self(), {idx, result}})
         loop()
 
       :stop ->
@@ -21,7 +21,7 @@ defmodule Trabajador do
 
   defp safe_execute(func) do
     try do
-      {:ok, func.()}
+      func.()  # ← Devuelve directo {idx, resultado}
     rescue
       exception -> {:error, exception}
     catch
