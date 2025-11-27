@@ -1,79 +1,66 @@
 defmodule Eratostenes do
 
-	def primos(n) when n < 2 do
-		:"n debe ser mayor o igual que 2"
-	end
+#Funciones publicas
 
-	def primos(n) do
-		
-		principalPID = self()
-		finalizadorPID = spawn_link(fn -> finalizador([], principalPID, 0) end)
-		primerFiltro = nil
+#N debe de ser mayor o igual que 2
+  def primos(n) when n < 2, do: []
 
-		primerFiltro =
-			Enum.reduce(2..n, primerFiltro, fn numero, filtroActual ->
-				case filtroActual do
-					nil ->
-						send(finalizadorPID, {:primo, numero})
-						spawn_link(fn -> filtro(numero, nil, finalizadorPID) end)
-					pid ->
-						send(pid, {:numero, numero})
-						pid
-				end
-			end)
+#Si es mayor o igual que dos
+#Se crea el primer filtro con el primer primo (2)
+#Se envian todos los numeros desde el 3 hasta n al primer filtro y este descarta o reenvia
+#Una vez se envían todos lo numeros, se envía un mensaje de fin al primer filtro que lo propaga hasta el último y así recogemos la cadena de primos
 
-		send(primerFiltro, :fin)
+  def primos(n) do
+    primer_filtro = spawn(fn -> filtro(2) end)
+    
+    Enum.each(3..n, fn i -> send(primer_filtro, {:numero, i}) end)
+    send(primer_filtro, {:fin, self()})
+    
+    receive do
+      {:resultado, primos} -> primos
+    end
+  end
 
-		receive do
-			{:resultado, primos} ->
-				primos
-		end
-		
-	end
+#Funciones privadas
 
+#Función usada para crear los filtros
+  defp filtro(primo) do
+    filtro(primo, nil)
+  end
 
-	defp filtro(primo, siguienteFiltro, finalizadorPID) do
-		
-		receive do
-			
-			{:numero, n} ->
-				if rem(n, primo) != 0 do
-					case siguienteFiltro do
-						nil ->
-							send(finalizadorPID, {:primo, n})
-							nuevoFiltro = spawn_link(fn -> filtro(n, nil, finalizadorPID) end)
-							filtro(primo, nuevoFiltro, finalizadorPID)
-						siguiente ->
-							send(siguiente, {:numero, n})
-							filtro(primo, siguiente, finalizadorPID)
-					end
-				else
-					filtro(primo, siguienteFiltro, finalizadorPID)
-				end
+#Función auxiliar que implementa el comportamiento de cada filtro
+#Si recibe un número, comprueba si es divisible por su primo
+#Si no lo es, lo reenvía al siguiente filtro o crea uno nuevo si no existe
+#Si recibe un mensaje de fin, lo reenvía al siguiente filtro o responde al cliente si no existe siguiente filtro
+  
+  defp filtro(primo, siguiente) do
+    receive do
+      {:numero, n} ->
+        if rem(n, primo) != 0 do
+          case siguiente do
+            nil -> 
+              nuevo_filtro = spawn(fn -> filtro(n) end)
+              filtro(primo, nuevo_filtro)
+            pid ->
+              send(pid, {:numero, n})
+              filtro(primo, siguiente)
+          end
+        else
+          filtro(primo, siguiente)
+        end
 
-			:fin ->
-				if siguienteFiltro, do: send(siguienteFiltro, :fin)
-				send(finalizadorPID, {:fin, self()})
-		end
-		
-	end
-
-
-	defp finalizador(primos, principalPID, filtrosVivos) do
-		
-		receive do
-			
-			{:primo, n} ->
-				finalizador([n | primos], principalPID, filtrosVivos + 1)
-				
-			{:fin, _pid} ->
-				if filtrosVivos - 1 == 0 do
-					send(principalPID, {:resultado, Enum.reverse(primos)})
-				else
-					finalizador(primos, principalPID, filtrosVivos - 1)
-				end
-		end
-		
-	end
-	
+      {:fin, cliente} ->
+        case siguiente do
+          nil ->
+            send(cliente, {:resultado, [primo]})
+          pid ->
+            send(pid, {:fin, self()})
+            
+            receive do
+              {:resultado, otros_primos} ->
+                send(cliente, {:resultado, [primo | otros_primos]})
+            end
+        end
+    end
+  end
 end
