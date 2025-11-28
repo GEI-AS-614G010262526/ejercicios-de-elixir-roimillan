@@ -1,4 +1,4 @@
-defmodule PruebasGestorRecursos do
+defmodule PruebasGestorNoDistribuida do
   def ejecutarTodas do
     IO.puts("=== Pruebas Gestor de Recursos ===")
     
